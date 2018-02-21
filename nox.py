@@ -18,17 +18,16 @@ import nox
 
 
 @nox.session
-@nox.parametrize('py', ['2.7', '3.4', '3.5', '3.6'])
+@nox.parametrize('py', ['2.7'])
 def tests(session, py):
     session.interpreter = 'python{}'.format(py)
-    session.install('mock', 'pytest', 'pytest-cov')
+    session.install('mock', 'pytest', 'pytest-cov', 'oauth2client', 'pyu2f')
     session.install('-e', '.')
 
     session.run(
         'py.test',
         '--quiet',
         '--cov=google_reauth',
-        '--cov-erase',
         '--cov-config=.coveragerc',
         'tests',
         *session.posargs
