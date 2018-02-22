@@ -17,16 +17,14 @@
 import base64
 import getpass
 import json
-import logging
+import pyu2f.convenience.authenticator
+import pyu2f.errors
+import pyu2f.model
 import sys
 
+from abc import ABCMeta, abstractmethod
 from six.moves import urllib
-
-from pyu2f import errors as u2ferrors
-from pyu2f import model
-from pyu2f.convenience import authenticator
-
-from google_reauth import reauth_errors
+from google_reauth import errors
 
 
 REAUTH_API = 'https://reauth.googleapis.com/v2/sessions'
@@ -34,37 +32,55 @@ REAUTH_SCOPE = 'https://www.googleapis.com/auth/accounts.reauth'
 REAUTH_ORIGIN = 'https://accounts.google.com'
 
 
-logger = logging.getLogger(__name__)
+def _handle_errors(msg):
+    """Raise an exception if msg has errors.
 
+    Args:
+        msg: parsed json from http response.
 
-def HandleErrors(msg):
+    Returns: input response.
+    Raises: ReauthAPIError
+    """
     if 'error' in msg:
-        raise reauth_errors.ReauthAPIError(msg['error']['message'])
+        raise errors.ReauthAPIError(msg['error']['message'])
     return msg
 
 
-def GetUserPassword(text):
+def get_user_password(text):
     """Get password from user.
 
     Override this function with a different logic if you are using this library
-    outside a CLI. Returns the password."""
+    outside a CLI.
 
+    Args:
+        text: message for the password prompt.
+
+    Returns: password string.
+    """
     return getpass.getpass(text)
 
 
-def InteractiveCheck():
+def _interactive_check():
     """Check if we are in an interractive environment.
 
     If the rapt token needs refreshing, the user needs to answer the
     challenges.
     If the user is not in an interractive environment, the challenges can not
-    be answered and we just wait for timeout for no reason."""
+    be answered and we just wait for timeout for no reason.
+
+    Returns: True if is interactive environment, False otherwise.
+    """
 
     return sys.stdin.isatty()
 
 
-def GetPrintCallback():
-    """Get preferred output function."""
+def get_print_callback():
+    """Get preferred output function.
+
+    Override this function to return a preferred output method, if needed.
+
+    Returns: function to write outout
+    """
 
     return sys.stderr.write
 
@@ -72,21 +88,25 @@ def GetPrintCallback():
 class ReauthChallenge(object):
     """Base class for reauth challenges."""
 
+    __metaclass__ = ABCMeta
+
     def __init__(self, http_request, access_token):
         self.http_request = http_request
         self.access_token = access_token
 
-    def GetName(self):
+    @abstractmethod
+    def get_name(self):
         """Returns the name of the challenge."""
-        raise NotImplementedError()
+        pass
 
-    def IsLocallyEligible(self):
+    @abstractmethod
+    def is_locally_eligible(self):
         """Returns true if a challenge is supported locally on this machine."""
-        raise NotImplementedError()
+        pass
 
-    def Execute(self, metadata, session_id):
+    def execute(self, metadata, session_id):
         """Execute challenge logic and pass credentials to reauth API."""
-        client_input = self.InternalObtainCredentials(metadata)
+        client_input = self._obtain_credentials(metadata)
 
         if not client_input:
             return None
@@ -104,25 +124,26 @@ class ReauthChallenge(object):
             headers={'Authorization': 'Bearer ' + self.access_token}
         )
         response = json.loads(content)
-        HandleErrors(response)
+        _handle_errors(response)
         return response
 
-    def InternalObtainCredentials(self, metadata):
+    @abstractmethod
+    def _obtain_credentials(self, metadata):
         """Performs logic required to obtain credentials and returns it."""
-        raise NotImplementedError()
+        pass
 
 
 class PasswordChallenge(ReauthChallenge):
     """Challenge that asks for user's password."""
 
-    def GetName(self):
+    def get_name(self):
         return 'PASSWORD'
 
-    def IsLocallyEligible(self):
+    def is_locally_eligible(self):
         return True
 
-    def InternalObtainCredentials(self, unused_metadata):
-        passwd = GetUserPassword('Please enter your password:')
+    def _obtain_credentials(self, unused_metadata):
+        passwd = get_user_password('Please enter your password:')
         if not passwd:
             passwd = ' '  # avoid the server crashing in case of no password :D
         return {'credential': passwd}
@@ -131,13 +152,13 @@ class PasswordChallenge(ReauthChallenge):
 class SecurityKeyChallenge(ReauthChallenge):
     """Challenge that asks for user's security key touch."""
 
-    def GetName(self):
+    def get_name(self):
         return 'SECURITY_KEY'
 
-    def IsLocallyEligible(self):
+    def is_locally_eligible(self):
         return True
 
-    def InternalObtainCredentials(self, metadata):
+    def _obtain_credentials(self, metadata):
         sk = metadata['securityKey']
         challenges = sk['challenges']
         app_id = sk['applicationId']
@@ -145,26 +166,28 @@ class SecurityKeyChallenge(ReauthChallenge):
         challenge_data = []
         for c in challenges:
             kh = c['keyHandle'].encode('ascii')
-            key = model.RegisteredKey(bytearray(base64.urlsafe_b64decode(kh)))
+            key = pyu2f.model.RegisteredKey(
+                bytearray(base64.urlsafe_b64decode(kh)))
             challenge = c['challenge'].encode('ascii')
             challenge = base64.urlsafe_b64decode(challenge)
             challenge_data.append({'key': key, 'challenge': challenge})
 
         try:
-            api = authenticator.CreateCompositeAuthenticator(REAUTH_ORIGIN)
+            api = pyu2f.convenience.authenticator.CreateCompositeAuthenticator(
+                REAUTH_ORIGIN)
             response = api.Authenticate(app_id, challenge_data,
-                                        print_callback=GetPrintCallback())
+                                        print_callback=get_print_callback())
             return {'securityKey': response}
-        except u2ferrors.U2FError as e:
-            if e.code == u2ferrors.U2FError.DEVICE_INELIGIBLE:
-                GetPrintCallback()('Ineligible security key.\n')
-            elif e.code == u2ferrors.U2FError.TIMEOUT:
-                GetPrintCallback()(
+        except pyu2f.errors.U2FError as e:
+            if e.code == pyu2f.errors.U2FError.DEVICE_INELIGIBLE:
+                get_print_callback()('Ineligible security key.\n')
+            elif e.code == pyu2f.errors.U2FError.TIMEOUT:
+                get_print_callback()(
                     'Timed out while waiting for security key touch.\n')
             else:
                 raise e
-        except u2ferrors.NoDeviceFoundError:
-            GetPrintCallback()('No security key found.\n')
+        except pyu2f.errors.NoDeviceFoundError:
+            get_print_callback()('No security key found.\n')
         return None
 
 
@@ -174,17 +197,17 @@ class ReauthManager(object):
     def __init__(self, http_request, access_token):
         self.http_request = http_request
         self.access_token = access_token
-        self.challenges = self.InternalBuildChallenges()
+        self.challenges = self._build_challenges()
 
-    def InternalBuildChallenges(self):
+    def _build_challenges(self):
         out = {}
         for c in [SecurityKeyChallenge(self.http_request, self.access_token),
                   PasswordChallenge(self.http_request, self.access_token)]:
-            if c.IsLocallyEligible():
-                out[c.GetName()] = c
+            if c.is_locally_eligible():
+                out[c.get_name()] = c
         return out
 
-    def InternalStart(self, requested_scopes):
+    def _start(self, requested_scopes):
         """Does initial request to reauth API and initialize the challenges."""
         body = {'supportedChallengeTypes': self.challenges.keys()}
         if requested_scopes:
@@ -196,57 +219,87 @@ class ReauthManager(object):
             headers={'Authorization': 'Bearer ' + self.access_token}
         )
         response = json.loads(content)
-        HandleErrors(response)
+        _handle_errors(response)
         return response
 
-    def DoOneRoundOfChallenges(self, msg):
+    def _do_one_round_of_challenges(self, msg):
         next_msg = None
         for challenge in msg['challenges']:
             if challenge['status'] != 'READY':
                 # Skip non-activated challneges.
                 continue
             c = self.challenges[challenge['challengeType']]
-            next_msg = c.Execute(challenge, msg['sessionId'])
+            next_msg = c.execute(challenge, msg['sessionId'])
         return next_msg
 
-    def ObtainProofOfReauth(self, requested_scopes=None):
+    def obtain_proof_of_reauth(self, requested_scopes=None):
         """Obtain proof of reauth (rapt token)."""
         msg = None
-        max_challenge_count = 5
 
-        while max_challenge_count:
-            max_challenge_count -= 1
+        for _ in range(0, 5):
 
             if not msg:
-                msg = self.InternalStart(requested_scopes)
+                msg = self._start(requested_scopes)
 
             if msg['status'] == 'AUTHENTICATED':
                 return msg['encodedProofOfReauthToken']
 
             if not (msg['status'] == 'CHALLENGE_REQUIRED' or
                     msg['status'] == 'CHALLENGE_PENDING'):
-                raise reauth_errors.ReauthAPIError(
+                raise errors.ReauthAPIError(
                     'Challenge status {0}'.format(msg['status']))
 
-            if not InteractiveCheck():
-                raise reauth_errors.ReauthUnattendedError()
+            if not _interactive_check():
+                raise errors.ReauthUnattendedError()
 
-            msg = self.DoOneRoundOfChallenges(msg)
+            msg = self._do_one_round_of_challenges(msg)
 
         # If we got here it means we didn't get authenticated.
-        raise reauth_errors.ReauthFailError()
+        raise errors.ReauthFailError()
 
 
-def ObtainRapt(http_request, access_token, requested_scopes):
+def _obtain_rapt(http_request, access_token, requested_scopes):
+    """Given an http request method and reauth access token, get rapt token.
+
+    Args:
+        http_request: function to run http requests
+        access_token: reauth access token
+        requested_scopes: scopes required by the client application
+
+    Returns: rapt token.
+    Raises:
+        ReauthAccessTokenRefreshError if a request for an access token failed.
+        ReauthUnattendedError if it's not aninteractive environment
+        ReauthAPIError if a request to the reauth API failed
+        ReauthFailError if we couldn't get a rapt token after 5 round of
+            challanges
+    """
     rm = ReauthManager(http_request, access_token)
-    rapt = rm.ObtainProofOfReauth(requested_scopes=requested_scopes)
+    rapt = rm.obtain_proof_of_reauth(requested_scopes=requested_scopes)
     return rapt
 
 
-def GetRaptToken(http_request, client_id, client_secret, refresh_token,
-                 token_uri, scopes=None):
-    """Given an http request method and refresh_token, get rapt token."""
-    GetPrintCallback()('Reauthentication required.\n')
+def get_rapt_token(http_request, client_id, client_secret, refresh_token,
+                   token_uri, scopes=None):
+    """Given an http request method and refresh_token, get rapt token.
+
+    Args:
+        http_request: function to run http requests
+        client_id: client id to get access token for reauth scope.
+        client_secret: client secret for the client_id
+        refresh_token: refresh token to refresh access token
+        token_uri: uri to refresh access token
+        scopes: scopes required by the client application
+
+    Returns: rapt token.
+    Raises:
+        ReauthAccessTokenRefreshError if a request for an access token failed.
+        ReauthUnattendedError if it's not aninteractive environment
+        ReauthAPIError if a request to the reauth API failed
+        ReauthFailError if we couldn't get a rapt token after 5 round of
+            challanges
+    """
+    get_print_callback()('Reauthentication required.\n')
 
     # Get access token for reauth.
     query_params = {
@@ -265,10 +318,10 @@ def GetRaptToken(http_request, client_id, client_secret, refresh_token,
     try:
         reauth_access_token = json.loads(content)['access_token']
     except (ValueError, KeyError):
-        raise reauth_errors.ReauthAccessTokenRefreshError
+        raise errors.ReauthAccessTokenRefreshError
 
     # Get rapt token from reauth API.
-    rapt_token = ObtainRapt(
+    rapt_token = _obtain_rapt(
         http_request,
         reauth_access_token,
         requested_scopes=scopes)

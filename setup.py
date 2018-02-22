@@ -17,7 +17,7 @@ import io
 import setuptools
 
 
-DEPENDENCIES = []
+DEPENDENCIES = ['oauth2client', 'pyu2f']
 
 OAUTH2CLIENT_EXTRA_DEPENDENCIES = [
     'oauth2client>=2.0.0'

@@ -27,7 +27,7 @@ from oauth2client import client
 
 try:
     from google_reauth import reauth
-    from google_reauth import reauth_errors
+    from google_reauth import errors
     from google_reauth import reauth_creds
     from google_reauth.reauth_creds import Oauth2WithReauthCredentials
 except ImportError:
@@ -169,7 +169,7 @@ class ReauthTest(unittest.TestCase):
     def _call_reauth(self):
         if os.environ.get('SK_SIGNING_PLUGIN') is not None:
             raise unittest.SkipTest('unset SK_SIGNING_PLUGIN.')
-        return reauth.GetRaptToken(
+        return reauth.get_rapt_token(
             self.request_mock,
             self.client_id,
             self.client_secret,
@@ -222,7 +222,7 @@ class ReauthTest(unittest.TestCase):
         if not u2f or not reauth:
             raise unittest.SkipTest('Needs pyu2f library.')
         self.is_interactive_mock.isatty = lambda: False
-        with self.assertRaises(reauth_errors.ReauthUnattendedError):
+        with self.assertRaises(errors.ReauthUnattendedError):
             unused_reauth_result = self._call_reauth()
 
     def testFromOAuth2Credentials(self):

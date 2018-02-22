@@ -23,7 +23,7 @@ from oauth2client import _helpers
 from oauth2client import client
 from oauth2client import transport
 from google_reauth import reauth
-from google_reauth import reauth_errors
+from google_reauth import errors
 
 from six.moves import http_client
 from six.moves import urllib
@@ -32,7 +32,7 @@ REAUTH_NEEDED_ERROR = 'invalid_grant'
 REAUTH_NEEDED_ERROR_INVALID_RAPT = 'invalid_rapt'
 REAUTH_NEEDED_ERROR_RAPT_REQUIRED = 'rapt_required'
 
-logger = logging.getLogger(__name__)
+_LOGGER = logging.getLogger(__name__)
 
 
 class Oauth2WithReauthCredentials(client.OAuth2Credentials):
@@ -48,9 +48,7 @@ class Oauth2WithReauthCredentials(client.OAuth2Credentials):
 
         A Oauth2WithReauthCredentials has an extra rapt_token."""
 
-        if 'rapt_token' in kwargs:
-            self.rapt_token = kwargs['rapt_token']
-            del kwargs['rapt_token']
+        self.rapt_token = kwargs.pop('rapt_token', None)
         super(Oauth2WithReauthCredentials, self).__init__(*args, **kwargs)
 
     @classmethod
@@ -119,7 +117,7 @@ class Oauth2WithReauthCredentials(client.OAuth2Credentials):
         if (not rapt_refreshed and d.get('error') == REAUTH_NEEDED_ERROR and
             (d.get('error_subtype') == REAUTH_NEEDED_ERROR_INVALID_RAPT or
              d.get('error_subtype') == REAUTH_NEEDED_ERROR_RAPT_REQUIRED)):
-            self.rapt_token = reauth.GetRaptToken(
+            self.rapt_token = reauth.get_rapt_token(
                 getattr(http, 'request', http),
                 self.client_id,
                 self.client_secret,
@@ -132,7 +130,7 @@ class Oauth2WithReauthCredentials(client.OAuth2Credentials):
 
         # An {'error':...} response body at this time means the refresh token
         # is expired or revoked, so we flag the credentials as such.
-        logger.info('Failed to retrieve access token: {0}'.format(content))
+        _LOGGER.info('Failed to retrieve access token: {0}'.format(content))
         error_msg = 'Invalid response {0}.'.format(resp.status)
         if 'error' in d:
             error_msg = d['error']
@@ -141,7 +139,7 @@ class Oauth2WithReauthCredentials(client.OAuth2Credentials):
             self.invalid = True
             if self.store is not None:
                 self.store.locked_put(self)
-        raise reauth_errors.HttpAccessTokenRefreshError(
+        raise errors.HttpAccessTokenRefreshError(
           error_msg, status=resp.status)
 
     def _do_refresh_request(self, http, rapt_refreshed=False):
@@ -158,7 +156,7 @@ class Oauth2WithReauthCredentials(client.OAuth2Credentials):
         headers = self._generate_refresh_request_headers()
         body = self._generate_refresh_request_body()
 
-        logger.info('Refreshing access_token')
+        _LOGGER.info('Refreshing access_token')
         resp, content = transport.request(
             http, self.token_uri, method='POST',
             body=body, headers=headers)
