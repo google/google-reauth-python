@@ -19,6 +19,13 @@ class ReauthError(Exception):
     pass
 
 
+class HttpAccessTokenRefreshError(Exception):
+    """Error (with HTTP status) trying to refresh an expired access token."""
+    def __init__(self, message, status=None):
+        super(HttpAccessTokenRefreshError, self).__init__(message)
+        self.status = status
+
+
 class ReauthUnattendedError(ReauthError):
     """An exception for when reauth cannot be answered."""
 
@@ -48,6 +55,8 @@ class ReauthAPIError(ReauthError):
 class ReauthAccessTokenRefreshError(ReauthError):
     """An exception for when we can't get an access token for reauth."""
 
-    def __init__(self):
+    def __init__(self, message=None, status=None):
         super(ReauthAccessTokenRefreshError, self).__init__(
-            'Failed to get an access token for reauthentication.')
+            'Failed to get an access token for reauthentication. {0}'.format(
+                message))
+        self.status = status

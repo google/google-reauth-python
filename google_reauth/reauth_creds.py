@@ -22,15 +22,9 @@ import logging
 from oauth2client import _helpers
 from oauth2client import client
 from oauth2client import transport
-from google_reauth import reauth
 from google_reauth import errors
+from google_reauth import reauth
 
-from six.moves import http_client
-from six.moves import urllib
-
-REAUTH_NEEDED_ERROR = 'invalid_grant'
-REAUTH_NEEDED_ERROR_INVALID_RAPT = 'invalid_rapt'
-REAUTH_NEEDED_ERROR_RAPT_REQUIRED = 'rapt_required'
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -91,57 +85,6 @@ class Oauth2WithReauthCredentials(client.OAuth2Credentials):
         json = original.to_json()
         return cls.from_json(json)
 
-    def _generate_refresh_request_body(self):
-        """Overrides."""
-        parameters = {
-            'grant_type': 'refresh_token',
-            'client_id': self.client_id,
-            'client_secret': self.client_secret,
-            'refresh_token': self.refresh_token,
-            'rapt': self.rapt_token,
-        }
-        body = urllib.parse.urlencode(parameters)
-        return body
-
-    def _handle_refresh_error(self, http, rapt_refreshed, resp, content):
-        # Check if we need a rapt token or if the rapt token is invalid.
-        # Once we refresh the rapt token, retry the access token refresh.
-        # If we did refresh the rapt token and still got an error, then the
-        # refresh token is expired or revoked.
-        d = {}
-        try:
-            d = json.loads(content)
-        except (TypeError, ValueError):
-            pass
-
-        if (not rapt_refreshed and d.get('error') == REAUTH_NEEDED_ERROR and
-            (d.get('error_subtype') == REAUTH_NEEDED_ERROR_INVALID_RAPT or
-             d.get('error_subtype') == REAUTH_NEEDED_ERROR_RAPT_REQUIRED)):
-            self.rapt_token = reauth.get_rapt_token(
-                getattr(http, 'request', http),
-                self.client_id,
-                self.client_secret,
-                self.refresh_token,
-                self.token_uri,
-                scopes=list(self.scopes),
-            )
-            self._do_refresh_request(http, rapt_refreshed=True)
-            return
-
-        # An {'error':...} response body at this time means the refresh token
-        # is expired or revoked, so we flag the credentials as such.
-        _LOGGER.info('Failed to retrieve access token: {0}'.format(content))
-        error_msg = 'Invalid response {0}.'.format(resp.status)
-        if 'error' in d:
-            error_msg = d['error']
-            if 'error_description' in d:
-                error_msg += ': ' + d['error_description']
-            self.invalid = True
-            if self.store is not None:
-                self.store.locked_put(self)
-        raise errors.HttpAccessTokenRefreshError(
-          error_msg, status=resp.status)
-
     def _do_refresh_request(self, http, rapt_refreshed=False):
         """Refresh the access_token using the refresh_token.
 
@@ -151,36 +94,53 @@ class Oauth2WithReauthCredentials(client.OAuth2Credentials):
                             token.
 
         Raises:
-            HttpAccessTokenRefreshError: When the refresh fails.
+            oauth2client.client.HttpAccessTokenRefreshError: if the refresh
+                fails.
         """
         headers = self._generate_refresh_request_headers()
-        body = self._generate_refresh_request_body()
 
         _LOGGER.info('Refreshing access_token')
-        resp, content = transport.request(
-            http, self.token_uri, method='POST',
-            body=body, headers=headers)
-        content = _helpers._from_bytes(content)
 
-        if resp.status != http_client.OK:
-            self._handle_refresh_error(http, rapt_refreshed, resp, content)
-            return
+        def http_request(uri, method, body, headers):
+            response, content = transport.request(
+                http, self.token_uri, method='POST',
+                body=body, headers=headers)
+            content = _helpers._from_bytes(content)
+            return response, content
 
-        d = json.loads(content)
-        self.token_response = d
-        self.access_token = d['access_token']
-        self.refresh_token = d.get('refresh_token', self.refresh_token)
-        if 'expires_in' in d:
-            delta = datetime.timedelta(seconds=int(d['expires_in']))
+        self.invalid = True
+        if self.store is not None:
+            self.store.locked_put(self)
+        try:
+            access_token, refresh_token, expires_in, id_token, content = (
+                reauth.refresh_access_token(
+                    http_request,
+                    self.client_id,
+                    self.client_secret,
+                    self.refresh_token,
+                    self.token_uri,
+                    rapt=self.rapt_token,
+                    scopes=list(self.scopes),
+                    headers=headers))
+        except errors.HttpAccessTokenRefreshError as e:
+            self.invalid = True
+            if self.store is not None:
+                self.store.locked_put(self)
+            raise client.HttpAccessTokenRefreshError(e, status=e.status)
+
+        self.token_response = content
+        self.access_token = access_token
+        self.refresh_token = (
+            refresh_token if refresh_token else self.refresh_token)
+        if expires_in:
+            delta = datetime.timedelta(seconds=int(expires_in))
             self.token_expiry = delta + client._UTCNOW()
         else:
             self.token_expiry = None
-        if 'id_token' in d:
-            self.id_token = client._extract_id_token(d['id_token'])
-            self.id_token_jwt = d['id_token']
-        else:
-            self.id_token = None
-            self.id_token_jwt = None
+        self.id_token_jwt = id_token
+        self.id_token = (
+            client._extract_id_token(id_token) if id_token else None)
+
         # On temporary refresh errors, the user does not actually have to
         # re-authorize, so we unflag here.
         self.invalid = False

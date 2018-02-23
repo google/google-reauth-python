@@ -21,6 +21,7 @@ import unittest
 
 import mock
 
+from six.moves import http_client
 from six.moves import urllib
 
 from oauth2client import client
@@ -84,13 +85,17 @@ class ReauthTest(unittest.TestCase):
         except ValueError:
             qp_json = {}
 
+        uri = kwargs['uri']
+
+        ok_response = lambda: None
+        setattr(ok_response, 'status', http_client.OK)
         # First call to oauth2 has REAUTH_SCOPE and returns an access token.
-        if ((args[0] == self.oauth_api_url and
+        if ((uri == self.oauth_api_url and
              qp.get('scope') == reauth.REAUTH_SCOPE)):
-            return None, json.dumps({'access_token': 'access_token_for_reauth'})
+            return ok_response, json.dumps({'access_token': 'access_token_for_reauth'})
 
         # Initialization call for reauth, serve first challenge
-        if args[0] == (reauth.REAUTH_API + ':start'):
+        if uri == (reauth.REAUTH_API + ':start'):
             return None, json.dumps({
                 'status': 'CHALLENGE_REQUIRED',
                 'sessionId': 'session_id_1',
@@ -103,7 +108,7 @@ class ReauthTest(unittest.TestCase):
             })
 
         # Continuation call for reauth, check first challenge and serve the second
-        if args[0] == (reauth.REAUTH_API + '/session_id_1:continue'):
+        if uri == (reauth.REAUTH_API + '/session_id_1:continue'):
             self.assertEqual(1, qp_json.get('challengeId'))
             self.assertEqual('RESPOND', qp_json.get('action'))
 
@@ -143,7 +148,7 @@ class ReauthTest(unittest.TestCase):
                 })
 
         # Continuation call for reauth, check second challenge and serve token
-        if args[0] == (reauth.REAUTH_API + '/session_id_2:continue'):
+        if uri == (reauth.REAUTH_API + '/session_id_2:continue'):
             self.assertEqual(2, qp_json.get('challengeId'))
             self.assertEqual('RESPOND', qp_json.get('action'))
             return None, json.dumps({
