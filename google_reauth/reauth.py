@@ -23,6 +23,7 @@ import pyu2f.model
 import sys
 
 from abc import ABCMeta, abstractmethod
+from six import add_metaclass
 from six.moves import http_client
 from six.moves import urllib
 from google_reauth import errors
@@ -90,10 +91,106 @@ def get_print_callback():
     return sys.stderr.write
 
 
+def _send_reauth_challenge_result(http_request, session_id, challenge_id,
+                                  client_input, access_token):
+    """Attempt to refresh access token by sending next challenge result.
+
+    Args:
+        http_request: callable to run http requests. Accepts uri, method, body
+            and headers. Returns a tuple: (response, content)
+        session_id: session id returned by the initial reauth call.
+        challenge_id: challenge id returned by the initial reauth call.
+        client_input: dict with a challenge-specific client input. For example:
+            {'credential': password} for password challenge
+        access_token: reauth access token.
+
+    Returns:
+        Parsed http response.
+    """
+    body = {
+        'sessionId': session_id,
+        'challengeId': challenge_id,
+        'action': 'RESPOND',
+        'proposalResponse': client_input,
+    }
+    _, content = http_request(
+        uri='{0}/{1}:continue'.format(REAUTH_API, session_id),
+        method='POST',
+        body=json.dumps(body),
+        headers={'Authorization': 'Bearer ' + access_token}
+    )
+    response = json.loads(content)
+    _handle_errors(response)
+    return response
+
+
+def _get_challenges(http_request, supported_challenge_types, access_token,
+                    requested_scopes=None):
+    """Does initial request to reauth API to get the challenges.
+
+    Args:
+        http_request: callable to run http requests. Accepts uri, method, body
+            and headers. Returns a tuple: (response, content)
+        supported_challenge_types: list of challenge names supported by the
+            manager.
+        access_token: reauth access token.
+        requested_scopes: scopes required by the user.
+
+    Returns:
+        Parsed http response.
+    """
+    body = {'supportedChallengeTypes': supported_challenge_types}
+    if requested_scopes:
+        body['oauthScopesForDomainPolicyLookup'] = requested_scopes
+    _, content = http_request(
+        uri='{0}:start'.format(REAUTH_API),
+        method='POST',
+        body=json.dumps(body),
+        headers={'Authorization': 'Bearer ' + access_token}
+    )
+    response = json.loads(content)
+    _handle_errors(response)
+    return response
+
+
+def _run_refresh_request(http_request, client_id, client_secret, refresh_token,
+                         token_uri, scope=None, rapt=None, headers={}):
+    """Refresh the access_token using the refresh_token.
+
+    Args:
+        http_request: callable to run http requests. Accepts uri, method, body
+            and headers. Returns a tuple: (response, content)
+        client_id: client id to get access token for reauth scope.
+        client_secret: client secret for the client_id
+        refresh_token: refresh token to refresh access token
+        token_uri: uri to refresh access token
+        scopes: scopes required by the client application
+        rapt: RAPT token
+        headers: headers for http request
+
+    Returns:
+        Tuple[str, dict]: http response and parsed response content.
+    """
+    parameters = {
+        'grant_type': 'refresh_token',
+        'client_id': client_id,
+        'client_secret': client_secret,
+        'refresh_token': refresh_token,
+        'scope': scope,
+        'rapt': rapt,
+    }
+    body = urllib.parse.urlencode(parameters)
+
+    return http_request(
+        uri=token_uri,
+        method='POST',
+        body=body,
+        headers=headers)
+
+
+@add_metaclass(ABCMeta)
 class ReauthChallenge(object):
     """Base class for reauth challenges."""
-
-    __metaclass__ = ABCMeta
 
     def __init__(self, http_request, access_token):
         self.http_request = http_request
@@ -115,22 +212,12 @@ class ReauthChallenge(object):
 
         if not client_input:
             return None
-
-        body = {
-            'sessionId': session_id,
-            'challengeId': metadata['challengeId'],
-            'action': 'RESPOND',
-            'proposalResponse': client_input,
-        }
-        _, content = self.http_request(
-            uri='{0}/{1}:continue'.format(REAUTH_API, session_id),
-            method='POST',
-            body=json.dumps(body),
-            headers={'Authorization': 'Bearer ' + self.access_token}
-        )
-        response = json.loads(content)
-        _handle_errors(response)
-        return response
+        return _send_reauth_challenge_result(
+            self.http_request,
+            session_id,
+            metadata['challengeId'],
+            client_input,
+            self.access_token)
 
     @abstractmethod
     def _obtain_credentials(self, metadata):
@@ -212,21 +299,6 @@ class ReauthManager(object):
                 out[c.get_name()] = c
         return out
 
-    def _start(self, requested_scopes):
-        """Does initial request to reauth API and initialize the challenges."""
-        body = {'supportedChallengeTypes': self.challenges.keys()}
-        if requested_scopes:
-            body['oauthScopesForDomainPolicyLookup'] = requested_scopes
-        _, content = self.http_request(
-            uri='{0}:start'.format(REAUTH_API),
-            method='POST',
-            body=json.dumps(body),
-            headers={'Authorization': 'Bearer ' + self.access_token}
-        )
-        response = json.loads(content)
-        _handle_errors(response)
-        return response
-
     def _do_one_round_of_challenges(self, msg):
         next_msg = None
         for challenge in msg['challenges']:
@@ -244,7 +316,11 @@ class ReauthManager(object):
         for _ in range(0, 5):
 
             if not msg:
-                msg = self._start(requested_scopes)
+                msg = _get_challenges(
+                    self.http_request,
+                    self.challenges.keys(),
+                    self.access_token,
+                    requested_scopes)
 
             if msg['status'] == 'AUTHENTICATED':
                 return msg['encodedProofOfReauthToken']
@@ -330,41 +406,6 @@ def get_rapt_token(http_request, client_id, client_secret, refresh_token,
         requested_scopes=scopes)
 
     return rapt_token
-
-
-def _run_refresh_request(http_request, client_id, client_secret, refresh_token,
-                         token_uri, scope=None, rapt=None, headers={}):
-    """Refresh the access_token using the refresh_token.
-
-    Args:
-        http_request: callable to run http requests. Accepts uri, method, body
-            and headers. Returns a tuple: (response, content)
-        client_id: client id to get access token for reauth scope.
-        client_secret: client secret for the client_id
-        refresh_token: refresh token to refresh access token
-        token_uri: uri to refresh access token
-        scopes: scopes required by the client application
-        rapt: RAPT token
-        headers: headers for http request
-
-    Returns:
-        Tuple[str, dict]: http response and parsed response content.
-    """
-    parameters = {
-        'grant_type': 'refresh_token',
-        'client_id': client_id,
-        'client_secret': client_secret,
-        'refresh_token': refresh_token,
-        'scope': scope,
-        'rapt': rapt,
-    }
-    body = urllib.parse.urlencode(parameters)
-
-    return http_request(
-        uri=token_uri,
-        method='POST',
-        body=body,
-        headers=headers)
 
 
 def _rapt_refresh_required(content):
