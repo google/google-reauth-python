@@ -101,7 +101,7 @@ def _send_reauth_challenge_result(http_request, session_id, challenge_id,
         session_id: session id returned by the initial reauth call.
         challenge_id: challenge id returned by the initial reauth call.
         client_input: dict with a challenge-specific client input. For example:
-            {'credential': password} for password challenge
+            {'credential': password} for password challenge.
         access_token: reauth access token.
 
     Returns:
@@ -137,7 +137,7 @@ def _get_challenges(http_request, supported_challenge_types, access_token,
         requested_scopes: scopes required by the user.
 
     Returns:
-        Parsed http response.
+        client reply to set .
     """
     body = {'supportedChallengeTypes': supported_challenge_types}
     if requested_scopes:
@@ -221,7 +221,19 @@ class ReauthChallenge(object):
 
     @abstractmethod
     def _obtain_credentials(self, metadata):
-        """Performs logic required to obtain credentials and returns it."""
+        """Performs logic required to obtain credentials and returns it.
+
+        Args:
+            metadata: challenge metadata returned in the 'challenges' field in
+                the initial reauth request. Includes the 'challengeType' field
+                and other challenge-specific fields.
+
+        Returns:
+            response that will be send to the reauth service as the content of
+            the 'proposalResponse' field in the request body. Usually a dict
+            with the keys specific to the challenge. For example,
+            {'credential': password} for password challenge.
+        """
         pass
 
 
