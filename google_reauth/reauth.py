@@ -50,62 +50,40 @@ REAUTH_NEEDED_ERROR_INVALID_RAPT = 'invalid_rapt'
 REAUTH_NEEDED_ERROR_RAPT_REQUIRED = 'rapt_required'
 
 
+_challenges = challenges.build_challenges()
 
 
-class ReauthManager(object):
-    """Reauth manager class that handles reauth challenges."""
+def _run_next_challenge(msg, http_request, access_token):
+    """Get the next challenge from msg and run it.
 
-    def __init__(self, http_request, access_token):
-        self.http_request = http_request
-        self.access_token = access_token
-        self.challenges = challenges.build_challenges()
+    Args:
+        msg: Reauth API response body (either from the initial request to
+            https://reauth.googleapis.com/v2/sessions:start or from sending the
+            previous challenge response to
+            https://reauth.googleapis.com/v2/sessions/id:continue)
+        http_request: callable to run http requests. Accepts uri, method, body
+            and headers. Returns a tuple: (response, content)
+        access_token: reauth access token
 
-    def _do_one_round_of_challenges(self, msg):
-        next_msg = None
-        for challenge in msg['challenges']:
-            if challenge['status'] != 'READY':
-                # Skip non-activated challneges.
-                continue
-            c = self.challenges[challenge['challengeType']]
-            client_input = c.obtain_credentials(challenge)
-            if not client_input:
-                return None
-            return _reauth_client.send_challenge_result(
-                self.http_request,
-                msg['sessionId'],
-                challenge['challengeId'],
-                client_input,
-                self.access_token)
-        return next_msg
-
-    def obtain_proof_of_reauth(self, requested_scopes=None):
-        """Obtain proof of reauth (rapt token)."""
-        msg = None
-
-        for _ in range(0, 5):
-
-            if not msg:
-                msg = _reauth_client.get_challenges(
-                    self.http_request,
-                    self.challenges.keys(),
-                    self.access_token,
-                    requested_scopes)
-
-            if msg['status'] == 'AUTHENTICATED':
-                return msg['encodedProofOfReauthToken']
-
-            if not (msg['status'] == 'CHALLENGE_REQUIRED' or
-                    msg['status'] == 'CHALLENGE_PENDING'):
-                raise errors.ReauthAPIError(
-                    'Challenge status {0}'.format(msg['status']))
-
-            if not _helpers.is_interactive():
-                raise errors.ReauthUnattendedError()
-
-            msg = self._do_one_round_of_challenges(msg)
-
-        # If we got here it means we didn't get authenticated.
-        raise errors.ReauthFailError()
+    Returns: rapt token.
+    Raises:
+        errors.ReauthError if reauth failed
+    """
+    for challenge in msg['challenges']:
+        if challenge['status'] != 'READY':
+            # Skip non-activated challneges.
+            continue
+        c = _challenges[challenge['challengeType']]
+        client_input = c.obtain_credentials(challenge)
+        if not client_input:
+            return None
+        return _reauth_client.send_challenge_result(
+            http_request,
+            msg['sessionId'],
+            challenge['challengeId'],
+            client_input,
+            access_token)
+    return None
 
 
 def _obtain_rapt(http_request, access_token, requested_scopes):
@@ -121,9 +99,32 @@ def _obtain_rapt(http_request, access_token, requested_scopes):
     Raises:
         errors.ReauthError if reauth failed
     """
-    rm = ReauthManager(http_request, access_token)
-    rapt = rm.obtain_proof_of_reauth(requested_scopes=requested_scopes)
-    return rapt
+    msg = None
+
+    for _ in range(0, 5):
+
+        if not msg:
+            msg = _reauth_client.get_challenges(
+                http_request,
+                _challenges.keys(),
+                access_token,
+                requested_scopes)
+
+        if msg['status'] == 'AUTHENTICATED':
+            return msg['encodedProofOfReauthToken']
+
+        if not (msg['status'] == 'CHALLENGE_REQUIRED' or
+                msg['status'] == 'CHALLENGE_PENDING'):
+            raise errors.ReauthAPIError(
+                'Challenge status {0}'.format(msg['status']))
+
+        if not _helpers.is_interactive():
+            raise errors.ReauthUnattendedError()
+
+        msg = _run_next_challenge(msg, http_request, access_token)
+
+    # If we got here it means we didn't get authenticated.
+    raise errors.ReauthFailError()
 
 
 def get_rapt_token(http_request, client_id, client_secret, refresh_token,
