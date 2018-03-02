@@ -30,6 +30,7 @@ try:
     from google_reauth import reauth
     from google_reauth import errors
     from google_reauth import reauth_creds
+    from google_reauth import _reauth_client
     from google_reauth.reauth_creds import Oauth2WithReauthCredentials
 except ImportError:
     reauth = None
@@ -95,7 +96,7 @@ class ReauthTest(unittest.TestCase):
             return ok_response, json.dumps({'access_token': 'access_token_for_reauth'})
 
         # Initialization call for reauth, serve first challenge
-        if uri == (reauth.REAUTH_API + ':start'):
+        if uri == (_reauth_client.REAUTH_API + ':start'):
             return None, json.dumps({
                 'status': 'CHALLENGE_REQUIRED',
                 'sessionId': 'session_id_1',
@@ -108,7 +109,7 @@ class ReauthTest(unittest.TestCase):
             })
 
         # Continuation call for reauth, check first challenge and serve the second
-        if uri == (reauth.REAUTH_API + '/session_id_1:continue'):
+        if uri == (_reauth_client.REAUTH_API + '/session_id_1:continue'):
             self.assertEqual(1, qp_json.get('challengeId'))
             self.assertEqual('RESPOND', qp_json.get('action'))
 
@@ -148,7 +149,7 @@ class ReauthTest(unittest.TestCase):
                 })
 
         # Continuation call for reauth, check second challenge and serve token
-        if uri == (reauth.REAUTH_API + '/session_id_2:continue'):
+        if uri == (_reauth_client.REAUTH_API + '/session_id_2:continue'):
             self.assertEqual(2, qp_json.get('challengeId'))
             self.assertEqual('RESPOND', qp_json.get('action'))
             return None, json.dumps({
@@ -158,7 +159,7 @@ class ReauthTest(unittest.TestCase):
             })
 
         raise Exception(
-            'Unexpected call :/\nURL {0}\n{1}'.format(args[0], kwargs['body']))
+            'Unexpected call :/\nURL {0}\n{1}'.format(uri, kwargs['body']))
 
   # This U2F mock is made by looking into the implementation of the class and
   # making the minimum requirement to actually answer a challenge.

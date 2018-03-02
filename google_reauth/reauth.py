@@ -33,17 +33,23 @@ Those steps are:
 """
 
 import json
+import sys
 
 from six.moves import http_client
+from google_reauth import challenges
 from google_reauth import errors
+from google_reauth import _helpers
+from google_reauth import _reauth_client
+
 
 
 REAUTH_SCOPE = 'https://www.googleapis.com/auth/accounts.reauth'
-REAUTH_ORIGIN = 'https://accounts.google.com'
 
 REAUTH_NEEDED_ERROR = 'invalid_grant'
 REAUTH_NEEDED_ERROR_INVALID_RAPT = 'invalid_rapt'
 REAUTH_NEEDED_ERROR_RAPT_REQUIRED = 'rapt_required'
+
+
 
 
 class ReauthManager(object):
@@ -52,15 +58,7 @@ class ReauthManager(object):
     def __init__(self, http_request, access_token):
         self.http_request = http_request
         self.access_token = access_token
-        self.challenges = self._build_challenges()
-
-    def _build_challenges(self):
-        out = {}
-        for c in [SecurityKeyChallenge(self.http_request, self.access_token),
-                  PasswordChallenge(self.http_request, self.access_token)]:
-            if c.is_locally_eligible():
-                out[c.get_name()] = c
-        return out
+        self.challenges = challenges.build_challenges()
 
     def _do_one_round_of_challenges(self, msg):
         next_msg = None
@@ -69,7 +67,15 @@ class ReauthManager(object):
                 # Skip non-activated challneges.
                 continue
             c = self.challenges[challenge['challengeType']]
-            next_msg = c.execute(challenge, msg['sessionId'])
+            client_input = c.obtain_credentials(challenge)
+            if not client_input:
+                return None
+            return _reauth_client.send_challenge_result(
+                self.http_request,
+                msg['sessionId'],
+                challenge['challengeId'],
+                client_input,
+                self.access_token)
         return next_msg
 
     def obtain_proof_of_reauth(self, requested_scopes=None):
@@ -79,7 +85,7 @@ class ReauthManager(object):
         for _ in range(0, 5):
 
             if not msg:
-                msg = _get_challenges(
+                msg = _reauth_client.get_challenges(
                     self.http_request,
                     self.challenges.keys(),
                     self.access_token,
@@ -93,7 +99,7 @@ class ReauthManager(object):
                 raise errors.ReauthAPIError(
                     'Challenge status {0}'.format(msg['status']))
 
-            if not _interactive_check():
+            if not _helpers.is_interactive():
                 raise errors.ReauthUnattendedError()
 
             msg = self._do_one_round_of_challenges(msg)
@@ -137,10 +143,10 @@ def get_rapt_token(http_request, client_id, client_secret, refresh_token,
     Raises:
         errors.ReauthError if reauth failed
     """
-    get_print_callback()('Reauthentication required.\n')
+    sys.stderr.write('Reauthentication required.\n')
 
     # Get access token for reauth.
-    response, content = _run_refresh_request(
+    response, content = _reauth_client.refresh_grant(
         http_request,
         client_id,
         client_secret,
@@ -236,7 +242,7 @@ def refresh_access_token(
         errors.HttpAccessTokenRefreshError it access token refresh failed
     """
 
-    response, content = _run_refresh_request(
+    response, content = _reauth_client.refresh_grant(
         http_request,
         client_id,
         client_secret,
@@ -261,7 +267,7 @@ def refresh_access_token(
                 scopes=scopes,
             )
             # retry with refreshed rapt
-            response, content = _run_refresh_request(
+            response, content = _reauth_client.refresh_grant(
                 http_request,
                 client_id,
                 client_secret,

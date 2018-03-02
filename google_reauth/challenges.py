@@ -14,20 +14,32 @@
 
 import abc
 import base64
+import sys
 
 import pyu2f.convenience.authenticator
 import pyu2f.errors
 import pyu2f.model
 import six
 
+from google_reauth import _helpers
+
+
+REAUTH_ORIGIN = 'https://accounts.google.com'
+
+
+def build_challenges():
+    """Returns ."""
+    out = {}
+    for c in [SecurityKeyChallenge(),
+              PasswordChallenge()]:
+        if c.is_locally_eligible():
+            out[c.get_name()] = c
+    return out
+
 
 @six.add_metaclass(abc.ABCMeta)
 class ReauthChallenge(object):
     """Base class for reauth challenges."""
-
-    def __init__(self, http_request, access_token):
-        self.http_request = http_request
-        self.access_token = access_token
 
     @abc.abstractmethod
     def get_name(self):
@@ -39,21 +51,8 @@ class ReauthChallenge(object):
         """Returns true if a challenge is supported locally on this machine."""
         pass
 
-    def execute(self, metadata, session_id):
-        """Execute challenge logic and pass credentials to reauth API."""
-        client_input = self._obtain_credentials(metadata)
-
-        if not client_input:
-            return None
-        return _send_reauth_challenge_result(
-            self.http_request,
-            session_id,
-            metadata['challengeId'],
-            client_input,
-            self.access_token)
-
     @abc.abstractmethod
-    def _obtain_credentials(self, metadata):
+    def obtain_credentials(self, metadata):
         """Performs logic required to obtain credentials and returns it.
 
         Args:
@@ -79,8 +78,8 @@ class PasswordChallenge(ReauthChallenge):
     def is_locally_eligible(self):
         return True
 
-    def _obtain_credentials(self, unused_metadata):
-        passwd = get_user_password('Please enter your password:')
+    def obtain_credentials(self, unused_metadata):
+        passwd = _helpers.get_user_password('Please enter your password:')
         if not passwd:
             passwd = ' '  # avoid the server crashing in case of no password :D
         return {'credential': passwd}
@@ -95,7 +94,7 @@ class SecurityKeyChallenge(ReauthChallenge):
     def is_locally_eligible(self):
         return True
 
-    def _obtain_credentials(self, metadata):
+    def obtain_credentials(self, metadata):
         sk = metadata['securityKey']
         challenges = sk['challenges']
         app_id = sk['applicationId']
@@ -113,16 +112,16 @@ class SecurityKeyChallenge(ReauthChallenge):
             api = pyu2f.convenience.authenticator.CreateCompositeAuthenticator(
                 REAUTH_ORIGIN)
             response = api.Authenticate(app_id, challenge_data,
-                                        print_callback=get_print_callback())
+                                        print_callback=sys.stderr.write)
             return {'securityKey': response}
         except pyu2f.errors.U2FError as e:
             if e.code == pyu2f.errors.U2FError.DEVICE_INELIGIBLE:
-                get_print_callback()('Ineligible security key.\n')
+                sys.stderr.write('Ineligible security key.\n')
             elif e.code == pyu2f.errors.U2FError.TIMEOUT:
-                get_print_callback()(
+                sys.stderr.write(
                     'Timed out while waiting for security key touch.\n')
             else:
                 raise e
         except pyu2f.errors.NoDeviceFoundError:
-            get_print_callback()('No security key found.\n')
+            sys.stderr.write('No security key found.\n')
         return None

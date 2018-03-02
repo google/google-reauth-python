@@ -50,7 +50,7 @@ def _handle_errors(msg):
 
 def _endpoint_request(http_request, path, body, access_token):
     _, content = http_request(
-        uri='{0}/{1}'.format(REAUTH_API, path),
+        uri='{0}{1}'.format(REAUTH_API, path),
         method='POST',
         body=json.dumps(body),
         headers={'Authorization': 'Bearer {0}'.format(access_token)}
@@ -80,9 +80,8 @@ def get_challenges(
     if requested_scopes:
         body['oauthScopesForDomainPolicyLookup'] = requested_scopes
 
-    response = _endpoint_request(
+    return _endpoint_request(
         http_request, ':start', body, access_token)
-    return response
 
 
 def send_challenge_result(
@@ -109,7 +108,7 @@ def send_challenge_result(
     }
 
     return _endpoint_request(
-        http_request, '{0}:continue'.format(session_id), body, access_token)
+        http_request, '/{0}:continue'.format(session_id), body, access_token)
 
 
 def refresh_grant(
