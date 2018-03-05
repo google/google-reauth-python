@@ -86,7 +86,7 @@ class ReauthTest(unittest.TestCase):
         except ValueError:
             qp_json = {}
 
-        uri = kwargs['uri']
+        uri = kwargs['uri'] if 'uri' in kwargs else args[0]
 
         ok_response = lambda: None
         setattr(ok_response, 'status', http_client.OK)
@@ -101,6 +101,10 @@ class ReauthTest(unittest.TestCase):
                 'status': 'CHALLENGE_REQUIRED',
                 'sessionId': 'session_id_1',
                 'challenges': [{
+                    'status': 'NOT_READY',
+                    'challengeId': 9,
+                    'challengeType': 'SOME_CHALLANGE'},
+                {
                     'status': 'READY',
                     'challengeId': 1,
                     'challengeType': 'PASSWORD',
@@ -230,15 +234,3 @@ class ReauthTest(unittest.TestCase):
         self.is_interactive_mock.isatty = lambda: False
         with self.assertRaises(errors.ReauthUnattendedError):
             unused_reauth_result = self._call_reauth()
-
-    def testFromOAuth2Credentials(self):
-        if not u2f or not reauth:
-            raise unittest.SkipTest('Needs pyu2f library.')
-        orig = client.OAuth2Credentials(
-            access_token='at', client_id='ci', client_secret='cs',
-            refresh_token='rt', token_expiry='te', token_uri='tu',
-            user_agent='ua')
-        cred = Oauth2WithReauthCredentials.from_OAuth2Credentials(orig)
-        self.assertEqual('Oauth2WithReauthCredentials', cred.__class__.__name__)
-        self.assertEqual('ci', cred.client_id)
-        self.assertEqual('cs', cred.client_secret)

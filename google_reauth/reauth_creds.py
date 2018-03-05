@@ -85,7 +85,7 @@ class Oauth2WithReauthCredentials(client.OAuth2Credentials):
         json = original.to_json()
         return cls.from_json(json)
 
-    def _do_refresh_request(self, http, rapt_refreshed=False):
+    def _do_refresh_request(self, http):
         """Refresh the access_token using the refresh_token.
 
         Args:
@@ -103,14 +103,15 @@ class Oauth2WithReauthCredentials(client.OAuth2Credentials):
 
         def http_request(uri, method, body, headers):
             response, content = transport.request(
-                http, self.token_uri, method='POST',
+                http, uri, method=method,
                 body=body, headers=headers)
             content = _helpers._from_bytes(content)
             return response, content
 
         self.invalid = True
-        if self.store is not None:
+        if self.store:
             self.store.locked_put(self)
+
         try:
             access_token, refresh_token, expires_in, id_token, content = (
                 reauth.refresh_access_token(
@@ -123,9 +124,6 @@ class Oauth2WithReauthCredentials(client.OAuth2Credentials):
                     scopes=list(self.scopes),
                     headers=headers))
         except errors.HttpAccessTokenRefreshError as e:
-            self.invalid = True
-            if self.store is not None:
-                self.store.locked_put(self)
             raise client.HttpAccessTokenRefreshError(e, status=e.status)
 
         self.token_response = content

@@ -42,7 +42,6 @@ from google_reauth import _helpers
 from google_reauth import _reauth_client
 
 
-
 REAUTH_SCOPE = 'https://www.googleapis.com/auth/accounts.reauth'
 
 REAUTH_NEEDED_ERROR = 'invalid_grant'
@@ -249,6 +248,7 @@ def refresh_access_token(
         client_secret,
         refresh_token,
         token_uri,
+        scopes,
         rapt,
         headers)
 
@@ -274,6 +274,7 @@ def refresh_access_token(
                 client_secret,
                 refresh_token,
                 token_uri,
+                scopes,
                 rapt,
                 headers)
 

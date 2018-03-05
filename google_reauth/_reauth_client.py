@@ -113,7 +113,7 @@ def send_challenge_result(
 
 def refresh_grant(
         http_request, client_id, client_secret, refresh_token,
-        token_uri, scope=None, rapt=None, headers={}):
+        token_uri, scopes=None, rapt=None, headers={}):
     """Implements the OAuth 2.0 Refresh Grant with the addition of the reauth
     token.
 
@@ -137,14 +137,15 @@ def refresh_grant(
         'client_id': client_id,
         'client_secret': client_secret,
         'refresh_token': refresh_token,
-        'scope': scope,
+        'scope': scopes,
         'rapt': rapt,
     }
 
     body = urllib.parse.urlencode(parameters)
 
-    return http_request(
+    response, content = http_request(
         uri=token_uri,
         method='POST',
         body=body,
         headers=headers)
+    return response, content
