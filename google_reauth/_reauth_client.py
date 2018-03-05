@@ -71,7 +71,7 @@ def get_challenges(
         supported_challenge_types (Sequence[str]): list of challenge names
             supported by the manager.
         access_token (str): Access token with reauth scopes.
-        requested_scopes (str): Scopes requested as a comma-joined string.
+        requested_scopes (list[str]): Authorized scopes for the credentials.
 
     Returns:
         dict: The response from the reauth API.
