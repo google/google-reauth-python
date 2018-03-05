@@ -113,8 +113,7 @@ class Oauth2WithReauthCredentials(client.OAuth2Credentials):
             self.store.locked_put(self)
 
         try:
-            access_token, refresh_token, expires_in, id_token, content = (
-                reauth.refresh_access_token(
+            self._update(*reauth.refresh_access_token(
                     http_request,
                     self.client_id,
                     self.client_secret,
@@ -126,6 +125,8 @@ class Oauth2WithReauthCredentials(client.OAuth2Credentials):
         except errors.HttpAccessTokenRefreshError as e:
             raise client.HttpAccessTokenRefreshError(e, status=e.status)
 
+    def _update(self, content, access_token, refresh_token=None,
+                expires_in=None, id_token=None):
         self.token_response = content
         self.access_token = access_token
         self.refresh_token = (
@@ -139,8 +140,6 @@ class Oauth2WithReauthCredentials(client.OAuth2Credentials):
         self.id_token = (
             client._extract_id_token(id_token) if id_token else None)
 
-        # On temporary refresh errors, the user does not actually have to
-        # re-authorize, so we unflag here.
         self.invalid = False
         if self.store:
             self.store.locked_put(self)

@@ -79,8 +79,8 @@ class ReauthCredsTest(unittest.TestCase):
         http_mock.request = request_mock
         return http_mock
 
-    def _run_refresh_test(self, http_mock, access_token=None,
-                          refresh_token=None, token_expiry=None, invalid=None):
+    def _run_refresh_test(self, http_mock, access_token, refresh_token,
+                          token_expiry, invalid):
         creds = self._get_creds()
         store = MockStore()
         creds.set_store(store)
@@ -93,32 +93,37 @@ class ReauthCredsTest(unittest.TestCase):
         return Oauth2WithReauthCredentials(
             access_token='old_token', client_id='id', client_secret='secret',
             refresh_token='old_refresh_token',
-            token_expiry='2018-03-02T21:26:13Z', token_uri='token_uri',
+            token_expiry=datetime.datetime(2018, 3, 2, 21, 26, 13),
+            token_uri='token_uri',
             user_agent='user_agent')
 
-    def _check_credentials(self, creds, store, access_token=None,
-                           refresh_token=None, token_expiry=None, invalid=None):
-        stored_creds = store.locked_get()
+    def _check_credentials(self, creds, store, access_token, refresh_token,
+                           token_expiry, invalid):
+        stored_creds = store.locked_get() if store else creds
 
-        if access_token:
-            self.assertEqual(access_token, creds.access_token)
-            self.assertEqual(access_token, stored_creds.access_token)
+        self.assertEqual(access_token, creds.access_token)
+        self.assertEqual(access_token, stored_creds.access_token)
 
-        if refresh_token:
-            self.assertEqual(refresh_token, creds.refresh_token)
-            self.assertEqual(refresh_token, stored_creds.refresh_token)
+        self.assertEqual(refresh_token, creds.refresh_token)
+        self.assertEqual(refresh_token, stored_creds.refresh_token)
 
-        if token_expiry:
-            self.assertEqual(token_expiry, creds.token_expiry)
-            self.assertEqual(token_expiry, stored_creds.token_expiry)
+        self.assertEqual(token_expiry, creds.token_expiry)
+        self.assertEqual(token_expiry, stored_creds.token_expiry)
 
-        if invalid:
-            self.assertEqual(invalid, creds.invalid)
-            self.assertEqual(invalid, stored_creds.invalid)
+        self.assertEqual(invalid, creds.invalid)
+        self.assertEqual(invalid, stored_creds.invalid)
+
   #######
   # Helper functions and classes above.
   # Actual tests below.
   #######
+
+    def setUp(self):
+        get_rapt = self.StartPatch('google_reauth.reauth.get_rapt_token')
+        get_rapt.return_value='rapt_token'
+
+        current_datetime = self.StartPatch('oauth2client.client._UTCNOW')
+        current_datetime.return_value = datetime.datetime(2018, 3, 2, 21, 26, 13)
 
     def testFromOAuth2Credentials(self):
         orig = client.OAuth2Credentials(
@@ -160,11 +165,11 @@ class ReauthCredsTest(unittest.TestCase):
         self._run_refresh_test(
             self._http_mock(request_side_effect),
             'new_access_token',
-            'new_refresh_token')
+            'new_refresh_token',
+            datetime.datetime(2018, 3, 2, 22, 26, 13),
+            False)
 
-    @mock.patch('google_reauth.reauth.get_rapt_token', return_value='rapt_token')
-    def testRefreshReauthRequired(self, get_rapt_function):
-        #reauth.get_rapt_token = self.get_rapt_token
+    def testRefreshReauthRequired(self):
         responses = [
             _token_response,
             (_error_response, json.dumps({
@@ -176,11 +181,11 @@ class ReauthCredsTest(unittest.TestCase):
         self._run_refresh_test(
             self._http_mock(request_side_effect),
             'new_access_token',
-            'new_refresh_token')
-        self.assertTrue(get_rapt_function.called)
+            'new_refresh_token',
+            datetime.datetime(2018, 3, 2, 22, 26, 13),
+            False)
 
-    @mock.patch('google_reauth.reauth.get_rapt_token', return_value='rapt_token')
-    def testInvalidRapt(self, get_rapt_function):
+    def testInvalidRapt(self):
         responses = [
             (_error_response, json.dumps({
                 'error': 'invalid_grant',
@@ -202,6 +207,33 @@ class ReauthCredsTest(unittest.TestCase):
             creds, store,
             'old_token',
             'old_refresh_token',
-            '2018-03-02T21:26:13Z',
+            datetime.datetime(2018, 3, 2, 21, 26, 13),
             True)
-        self.assertTrue(get_rapt_function.called)
+
+    def testRefreshNoStore(self):
+        def request_side_effect(self, *args, **kwargs):
+            return _token_response
+
+        creds = self._get_creds()
+        creds._do_refresh_request(self._http_mock(request_side_effect))
+        self._check_credentials(
+            creds, None,
+            'new_access_token',
+            'new_refresh_token',
+            datetime.datetime(2018, 3, 2, 22, 26, 13),
+            False)
+
+    def testRefreshNoExpiry(self):
+        def request_side_effect(self, *args, **kwargs):
+            return (
+                _ok_response,
+                json.dumps(
+                    {'access_token': 'new_access_token',
+                     'refresh_token': 'new_refresh_token'}))
+
+        self._run_refresh_test(
+            self._http_mock(request_side_effect),
+            'new_access_token',
+            'new_refresh_token',
+            None,
+            False)

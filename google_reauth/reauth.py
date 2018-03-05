@@ -293,4 +293,4 @@ def refresh_access_token(
     refresh_token = content.get('refresh_token', None)
     expires_in = content.get('expires_in', None)
     id_token = content.get('id_token', None)
-    return access_token, refresh_token, expires_in, id_token, content
+    return content, access_token, refresh_token, expires_in, id_token
