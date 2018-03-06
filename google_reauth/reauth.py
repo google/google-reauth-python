@@ -42,14 +42,15 @@ from google_reauth import _helpers
 from google_reauth import _reauth_client
 
 
-REAUTH_SCOPE = 'https://www.googleapis.com/auth/accounts.reauth'
+_REAUTH_SCOPE = 'https://www.googleapis.com/auth/accounts.reauth'
 
-REAUTH_NEEDED_ERROR = 'invalid_grant'
-REAUTH_NEEDED_ERROR_INVALID_RAPT = 'invalid_rapt'
-REAUTH_NEEDED_ERROR_RAPT_REQUIRED = 'rapt_required'
+_REAUTH_NEEDED_ERROR = 'invalid_grant'
+_REAUTH_NEEDED_ERROR_INVALID_RAPT = 'invalid_rapt'
+_REAUTH_NEEDED_ERROR_RAPT_REQUIRED = 'rapt_required'
 
-
-_challenges = challenges.build_challenges()
+_AUTHENTICATED = 'AUTHENTICATED'
+_CHALLENGE_REQUIRED = 'CHALLENGE_REQUIRED'
+_CHALLENGE_PENDING = 'CHALLENGE_PENDING'
 
 
 def _run_next_challenge(msg, http_request, access_token):
@@ -72,8 +73,19 @@ def _run_next_challenge(msg, http_request, access_token):
         if challenge['status'] != 'READY':
             # Skip non-activated challneges.
             continue
-        c = _challenges[challenge['challengeType']]
-        client_input = c.obtain_credentials(challenge)
+        c = challenges.AVAILABLE_CHALLENGES.get(
+                challenge['challengeType'], None)
+        if not c:
+            raise errors.ReauthFailError(
+                'Unsupported challenge type {0}. Supported types: {0}'
+                .format(
+                    challenge['challengeType'],
+                    ','.join(challenges.AVAILABLE_CHALLENGES.keys())))
+        if not c.is_locally_eligible:
+            raise errors.ReauthFailError(
+                'Challenge {0} is not locally eligible'
+                .format(challenge['challengeType']))
+        client_input = c.obtain_challenge_input(challenge)
         if not client_input:
             return None
         return _reauth_client.send_challenge_result(
@@ -85,7 +97,7 @@ def _run_next_challenge(msg, http_request, access_token):
     return None
 
 
-def _obtain_rapt(http_request, access_token, requested_scopes):
+def _obtain_rapt(http_request, access_token, requested_scopes, rounds_num=5):
     """Given an http request method and reauth access token, get rapt token.
 
     Args:
@@ -93,6 +105,10 @@ def _obtain_rapt(http_request, access_token, requested_scopes):
             and headers. Returns a tuple: (response, content)
         access_token: reauth access token
         requested_scopes: scopes required by the client application
+        rounds_num: max number of attempts to get a rapt after the next
+            challenge, before failing the reauth. This defines total number of
+            challenges + number of additional retries if the chalenge input
+            wasn't accepted.
 
     Returns: rapt token.
     Raises:
@@ -100,20 +116,20 @@ def _obtain_rapt(http_request, access_token, requested_scopes):
     """
     msg = None
 
-    for _ in range(0, 5):
+    for _ in range(0, rounds_num):
 
         if not msg:
             msg = _reauth_client.get_challenges(
                 http_request,
-                _challenges.keys(),
+                challenges.AVAILABLE_CHALLENGES.keys(),
                 access_token,
                 requested_scopes)
 
-        if msg['status'] == 'AUTHENTICATED':
+        if msg['status'] == _AUTHENTICATED:
             return msg['encodedProofOfReauthToken']
 
-        if not (msg['status'] == 'CHALLENGE_REQUIRED' or
-                msg['status'] == 'CHALLENGE_PENDING'):
+        if not (msg['status'] == _CHALLENGE_REQUIRED or
+                msg['status'] == _CHALLENGE_PENDING):
             raise errors.ReauthAPIError(
                 'Challenge status {0}'.format(msg['status']))
 
@@ -152,7 +168,7 @@ def get_rapt_token(http_request, client_id, client_secret, refresh_token,
         client_secret,
         refresh_token,
         token_uri,
-        REAUTH_SCOPE)
+        _REAUTH_SCOPE)
 
     try:
         content = json.loads(content)
@@ -191,9 +207,9 @@ def _rapt_refresh_required(content):
     except (TypeError, ValueError):
         return False
     return (
-        content.get('error') == REAUTH_NEEDED_ERROR and
-        (content.get('error_subtype') == REAUTH_NEEDED_ERROR_INVALID_RAPT or
-         content.get('error_subtype') == REAUTH_NEEDED_ERROR_RAPT_REQUIRED))
+        content.get('error') == _REAUTH_NEEDED_ERROR and
+        (content.get('error_subtype') == _REAUTH_NEEDED_ERROR_INVALID_RAPT or
+         content.get('error_subtype') == _REAUTH_NEEDED_ERROR_RAPT_REQUIRED))
 
 
 def _get_refresh_error_message(content):

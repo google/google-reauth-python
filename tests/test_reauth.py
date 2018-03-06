@@ -37,11 +37,8 @@ from pyu2f import model
 from pyu2f import u2f
 
 
-_ok_response = lambda: None
-setattr(_ok_response, 'status', http_client.OK)
-
-_error_response = lambda: None
-setattr(_error_response, 'status', None)
+_ok_response = mock.Mock(spec=['status'], status=http_client.OK)
+_error_response = mock.Mock(spec=['status'], status=None)
 
 
 class ReauthTest(unittest.TestCase):
@@ -91,11 +88,11 @@ class ReauthTest(unittest.TestCase):
 
         # First call to oauth2 has REAUTH_SCOPE and returns an access token.
         if ((uri == self.oauth_api_url and
-             qp.get('scope') == reauth.REAUTH_SCOPE)):
+             qp.get('scope') == reauth._REAUTH_SCOPE)):
             return _ok_response, json.dumps({'access_token': 'access_token_for_reauth'})
 
         # Initialization call for reauth, serve first challenge
-        if uri == (_reauth_client.REAUTH_API + ':start'):
+        if uri == (_reauth_client._REAUTH_API + ':start'):
             return None, json.dumps({
                 'status': 'CHALLENGE_REQUIRED',
                 'sessionId': 'session_id_1',
@@ -108,7 +105,7 @@ class ReauthTest(unittest.TestCase):
             })
 
         # Continuation call for reauth, check first challenge and serve the second
-        if uri == (_reauth_client.REAUTH_API + '/session_id_1:continue'):
+        if uri == (_reauth_client._REAUTH_API + '/session_id_1:continue'):
             self.assertEqual(1, qp_json.get('challengeId'))
             self.assertEqual('RESPOND', qp_json.get('action'))
 
@@ -148,7 +145,7 @@ class ReauthTest(unittest.TestCase):
                 })
 
         # Continuation call for reauth, check second challenge and serve token
-        if uri == (_reauth_client.REAUTH_API + '/session_id_2:continue'):
+        if uri == (_reauth_client._REAUTH_API + '/session_id_2:continue'):
             self.assertEqual(2, qp_json.get('challengeId'))
             self.assertEqual('RESPOND', qp_json.get('action'))
             return None, json.dumps({
@@ -171,11 +168,11 @@ class ReauthTest(unittest.TestCase):
                 'some_origin')
             return model.SignResponse('key_handle', 'resp', client_data)
 
-    def _call_reauth(self, scopes=None):
+    def _call_reauth(self, request_mock, scopes=None):
         if os.environ.get('SK_SIGNING_PLUGIN') is not None:
             raise unittest.SkipTest('unset SK_SIGNING_PLUGIN.')
         return reauth.get_rapt_token(
-            self.request_mock,
+            request_mock,
             self.client_id,
             self.client_secret,
             'some_refresh_token',
@@ -197,9 +194,6 @@ class ReauthTest(unittest.TestCase):
             'pyu2f.u2f.GetLocalU2FInterface')
         self.u2f_local_interface_mock.return_value = self._U2FInterfaceMock()
 
-        self.request_mock = self.StartPatch('httplib2.Http.request')
-        self.request_mock.side_effect = self._request_mock_side_effect
-
         self.getpass_mock = self.StartPatch('getpass.getpass')
         self.getpass_mock.return_value = self.correct_password
 
@@ -207,28 +201,54 @@ class ReauthTest(unittest.TestCase):
         self.is_interactive_mock.isatty = lambda: True
 
     def testPassAndGnubbyReauth(self):
-        reauth_result = self._call_reauth()
-        self.assertEqual(self.rapt_token, reauth_result)
-        self.assertEqual(4, self.request_mock.call_count)
+        with mock.patch('httplib2.Http.request',
+                        side_effect = self._request_mock_side_effect) as request_mock:
+            reauth_result = self._call_reauth(request_mock)
+            self.assertEqual(self.rapt_token, reauth_result)
+            self.assertEqual(4, request_mock.call_count)
 
     def testPassWithScopes(self):
-        reauth_result = self._call_reauth([
-            'https://www.googleapis.com/auth/scope1',
-            'https://www.googleapis.com/auth/scope2'])
-        self.assertEqual(self.rapt_token, reauth_result)
-        self.assertEqual(4, self.request_mock.call_count)
+        with mock.patch('httplib2.Http.request',
+                        side_effect = self._request_mock_side_effect) as request_mock:
+            reauth_result = self._call_reauth(request_mock, [
+                'https://www.googleapis.com/auth/scope1',
+                'https://www.googleapis.com/auth/scope2'])
+            self.assertEqual(self.rapt_token, reauth_result)
+            self.assertEqual(4, request_mock.call_count)
 
     def testIncorrectPassThenPassAndGnubbyReauth(self):
-        self.getpass_mock.return_value = None
-        self.getpass_mock.side_effect = ['bad_pass', self.correct_password]
-        reauth_result = self._call_reauth()
-        self.assertEqual(self.rapt_token, reauth_result)
-        self.assertEqual(5, self.request_mock.call_count)
+        with mock.patch('httplib2.Http.request',
+                        side_effect = self._request_mock_side_effect) as request_mock:
+            self.getpass_mock.return_value = None
+            self.getpass_mock.side_effect = ['bad_pass', self.correct_password]
+            reauth_result = self._call_reauth(request_mock)
+            self.assertEqual(self.rapt_token, reauth_result)
+            self.assertEqual(5, request_mock.call_count)
 
     def testNonInteractiveError(self):
-        self.is_interactive_mock.isatty = lambda: False
-        with self.assertRaises(errors.ReauthUnattendedError):
-            unused_reauth_result = self._call_reauth()
+        with mock.patch('httplib2.Http.request',
+                        side_effect = self._request_mock_side_effect) as request_mock:
+            self.is_interactive_mock.isatty = lambda: False
+            with self.assertRaises(errors.ReauthUnattendedError):
+                unused_reauth_result = self._call_reauth(request_mock)
+
+    @mock.patch('google_reauth.challenges.AVAILABLE_CHALLENGES', {})
+    def testChallengeNotSupported(self):
+        with mock.patch('httplib2.Http.request',
+                        side_effect = self._request_mock_side_effect) as request_mock:
+            with self.assertRaises(errors.ReauthFailError):
+                reauth_result = self._call_reauth(request_mock)
+                self.assertEqual(self.rapt_token, reauth_result)
+                self.assertEqual(4, request_mock.call_count)
+
+    @mock.patch('google_reauth.challenges.PasswordChallenge.is_locally_eligible', False)
+    def testChallengeNotEligible(self):
+        with mock.patch('httplib2.Http.request',
+                        side_effect = self._request_mock_side_effect) as request_mock:
+            with self.assertRaises(errors.ReauthFailError):
+                reauth_result = self._call_reauth(request_mock)
+                self.assertEqual(self.rapt_token, reauth_result)
+                self.assertEqual(4, request_mock.call_count)
 
     def accessTokenRefreshError(self, response, content):
         def side_effect(*args, **kwargs):
@@ -237,17 +257,16 @@ class ReauthTest(unittest.TestCase):
                 return response, content
             raise Exception(
                 'Unexpected call :/\nURL {0}\n{1}'.format(uri, kwargs['body']))
-
-        request_mock = self.StartPatch('httplib2.Http.request')
-        request_mock.side_effect = side_effect
-        with self.assertRaises(errors.HttpAccessTokenRefreshError):
-            reauth.refresh_access_token(
-                request_mock,
-                self.client_id,
-                self.client_secret,
-                'some_refresh_token',
-                self.oauth_api_url)
-        self.assertEqual(1, request_mock.call_count)
+        with mock.patch('httplib2.Http.request',
+                        side_effect = side_effect) as request_mock:
+            with self.assertRaises(errors.HttpAccessTokenRefreshError):
+                reauth.refresh_access_token(
+                    request_mock,
+                    self.client_id,
+                    self.client_secret,
+                    'some_refresh_token',
+                    self.oauth_api_url)
+            self.assertEqual(1, request_mock.call_count)
 
     def testAccessTokenRefreshError(self):
         self.accessTokenRefreshError(_ok_response, "foo")
@@ -264,21 +283,20 @@ class ReauthTest(unittest.TestCase):
                 qp_json = {}
             uri = kwargs['uri'] if 'uri' in kwargs else args[0]
             if ((uri == self.oauth_api_url and
-                 qp.get('scope') == reauth.REAUTH_SCOPE)):
+                 qp.get('scope') == reauth._REAUTH_SCOPE)):
                 return response, content
             raise Exception(
                 'Unexpected call :/\nURL {0}\n{1}'.format(uri, kwargs['body']))
-
-        request_mock = self.StartPatch('httplib2.Http.request')
-        request_mock.side_effect = side_effect
-        with self.assertRaises(errors.ReauthAccessTokenRefreshError):
-            reauth.get_rapt_token(
-                request_mock,
-                self.client_id,
-                self.client_secret,
-                'some_refresh_token',
-                self.oauth_api_url)
-        self.assertEqual(1, request_mock.call_count)
+        with mock.patch('httplib2.Http.request',
+                        side_effect = side_effect) as request_mock:
+            with self.assertRaises(errors.ReauthAccessTokenRefreshError):
+                reauth.get_rapt_token(
+                    request_mock,
+                    self.client_id,
+                    self.client_secret,
+                    'some_refresh_token',
+                    self.oauth_api_url)
+            self.assertEqual(1, request_mock.call_count)
 
     def testReauthAccessTokenError(self):
         self.reauthAccessTokenError(_ok_response, "foo")
@@ -305,19 +323,19 @@ class ReauthTest(unittest.TestCase):
                     'access_token': 'access_token_for_reauth'})
 
             # Initialization call for reauth, serve first challenge
-            if uri == (_reauth_client.REAUTH_API + ':start'):
+            if uri == (_reauth_client._REAUTH_API + ':start'):
                 return None, content
 
-        request_mock = self.StartPatch('httplib2.Http.request')
-        request_mock.side_effect = side_effect
-        with self.assertRaises(errors.ReauthAPIError) as e:
-            reauth.get_rapt_token(
-                request_mock,
-                self.client_id,
-                self.client_secret,
-                'some_refresh_token',
-                self.oauth_api_url)
-        self.assertEqual(2, request_mock.call_count)
+        with mock.patch('httplib2.Http.request',
+                        side_effect = side_effect) as request_mock:
+            with self.assertRaises(errors.ReauthAPIError) as e:
+                reauth.get_rapt_token(
+                    request_mock,
+                    self.client_id,
+                    self.client_secret,
+                    'some_refresh_token',
+                    self.oauth_api_url)
+            self.assertEqual(2, request_mock.call_count)
 
     def testGetChallengesError(self):
         self.getChallengesError(json.dumps({'status': 'ERROR'}))
@@ -333,7 +351,7 @@ class ReauthTest(unittest.TestCase):
                     'access_token': 'access_token_for_reauth'})
 
             # Initialization call for reauth, serve first challenge
-            if uri == (_reauth_client.REAUTH_API + ':start'):
+            if uri == (_reauth_client._REAUTH_API + ':start'):
                 return None, json.dumps({
                     'status': 'CHALLENGE_REQUIRED',
                     'sessionId': 'session_id_1',
@@ -354,10 +372,10 @@ class ReauthTest(unittest.TestCase):
                 scopes=None)
         self.assertEqual(6, request_mock.call_count)
 
-    def testRetryOnNoUserInput(self):
-        self.obtain_credentials_mock = self.StartPatch(
-            'google_reauth.challenges.SecurityKeyChallenge.obtain_credentials')
-        self.obtain_credentials_mock.return_value = None
-        with self.assertRaises(errors.ReauthFailError):
-            reauth_result = self._call_reauth()
-        self.assertEqual(7, self.request_mock.call_count)
+    @mock.patch('google_reauth.challenges.SecurityKeyChallenge.obtain_challenge_input', return_value = None)
+    def testRetryOnNoUserInput(self, challenge_mock):
+        with mock.patch('httplib2.Http.request',
+                        side_effect = self._request_mock_side_effect) as request_mock:
+            with self.assertRaises(errors.ReauthFailError):
+                reauth_result = self._call_reauth(request_mock)
+            self.assertEqual(7, request_mock.call_count)

@@ -28,10 +28,7 @@ from six.moves import urllib
 
 from google_reauth import errors
 
-REAUTH_API = 'https://reauth.googleapis.com/v2/sessions'
-AUTHENTICATED = 'AUTHENTICATED'
-CHALLENGE_REQUIRED = 'CHALLENGE_REQUIRED'
-CHALLENGE_PENDING = 'CHALLENGE_PENDING'
+_REAUTH_API = 'https://reauth.googleapis.com/v2/sessions'
 
 
 def _handle_errors(msg):
@@ -50,7 +47,7 @@ def _handle_errors(msg):
 
 def _endpoint_request(http_request, path, body, access_token):
     _, content = http_request(
-        uri='{0}{1}'.format(REAUTH_API, path),
+        uri='{0}{1}'.format(_REAUTH_API, path),
         method='POST',
         body=json.dumps(body),
         headers={'Authorization': 'Bearer {0}'.format(access_token)}

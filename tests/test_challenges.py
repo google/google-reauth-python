@@ -26,26 +26,19 @@ from google_reauth import challenges
 import pyu2f
 
 
+class _U2FInterfaceMock(object):
+    def Authenticate(self, unused_app_id, challenge, unused_registered_keys):
+        raise self.error
+
+
+_u2f_interface_mock = _U2FInterfaceMock()
+
+
 class ChallangesTest(unittest.TestCase):
     """This class contains tests for reauth challanges. """
 
-    # This U2F mock is made by looking into the implementation of the class and
-    # making the minimum requirement to actually answer a challenge.
-    class _U2FInterfaceMock(object):
-        def Authenticate(self, unused_app_id, challenge, unused_registered_keys):
-            raise self.error
-
-    def StartPatch(self, *args, **kwargs):
-        patcher = mock.patch(*args, **kwargs)
-        self.addCleanup(patcher.stop)
-        return patcher.start()
-
-    #######
-    # Helper functions and classes above.
-    # Actual tests below.
-    #######
-
-    def testSecurityKeyError(self):
+    @mock.patch('pyu2f.u2f.GetLocalU2FInterface', return_value = _u2f_interface_mock)
+    def testSecurityKeyError(self, u2f_mock):
         metadata = {
             'status': 'READY',
             'challengeId': 2,
@@ -58,45 +51,29 @@ class ChallangesTest(unittest.TestCase):
                 }]
             }}
 
-        u2f_interface_mock = self._U2FInterfaceMock()
-        self.u2f_local_interface_mock = self.StartPatch(
-            'pyu2f.u2f.GetLocalU2FInterface')
-        self.u2f_local_interface_mock.return_value = u2f_interface_mock
-
         challenge = challenges.SecurityKeyChallenge()
 
-        u2f_interface_mock.error = pyu2f.errors.U2FError(
+        _u2f_interface_mock.error = pyu2f.errors.U2FError(
             pyu2f.errors.U2FError.DEVICE_INELIGIBLE)
-        self.assertEquals(None, challenge.obtain_credentials(metadata))
+        self.assertEquals(None, challenge.obtain_challenge_input(metadata))
 
-        u2f_interface_mock.error = pyu2f.errors.U2FError(
+        _u2f_interface_mock.error = pyu2f.errors.U2FError(
             pyu2f.errors.U2FError.TIMEOUT)
-        self.assertEquals(None, challenge.obtain_credentials(metadata))
+        self.assertEquals(None, challenge.obtain_challenge_input(metadata))
 
-        u2f_interface_mock.error = pyu2f.errors.NoDeviceFoundError()
-        self.assertEquals(None, challenge.obtain_credentials(metadata))
+        _u2f_interface_mock.error = pyu2f.errors.NoDeviceFoundError()
+        self.assertEquals(None, challenge.obtain_challenge_input(metadata))
 
-        u2f_interface_mock.error = pyu2f.errors.U2FError(
+        _u2f_interface_mock.error = pyu2f.errors.U2FError(
             pyu2f.errors.U2FError.BAD_REQUEST)
         with self.assertRaises(pyu2f.errors.U2FError):
-            challenge.obtain_credentials(metadata)
+            challenge.obtain_challenge_input(metadata)
 
-        u2f_interface_mock.error = pyu2f.errors.UnsupportedVersionException()
+        _u2f_interface_mock.error = pyu2f.errors.UnsupportedVersionException()
         with self.assertRaises(pyu2f.errors.UnsupportedVersionException):
-            challenge.obtain_credentials(metadata)
+            challenge.obtain_challenge_input(metadata)
 
-    def testNoPassword(self):
-        getpass_mock = self.StartPatch('getpass.getpass')
-        getpass_mock.return_value = None
-        self.assertEquals(challenges.PasswordChallenge().obtain_credentials({}),
+    @mock.patch('getpass.getpass', return_value = None)
+    def testNoPassword(self, getpass_mock):
+        self.assertEquals(challenges.PasswordChallenge().obtain_challenge_input({}),
             {'credential': ' '})
-
-    def testBuildChallenges(self):
-        self.assertEquals(sorted(challenges.build_challenges().keys()), [
-            'PASSWORD', 'SECURITY_KEY'])
-
-        challenge_mock = self.StartPatch(
-            'google_reauth.challenges.SecurityKeyChallenge.is_locally_eligible')
-        challenge_mock.return_value = False
-        self.assertEquals(sorted(challenges.build_challenges().keys()), [
-            'PASSWORD'])

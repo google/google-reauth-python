@@ -27,32 +27,24 @@ from google_reauth import _helpers
 REAUTH_ORIGIN = 'https://accounts.google.com'
 
 
-def build_challenges():
-    """Returns ."""
-    out = {}
-    for c in [SecurityKeyChallenge(),
-              PasswordChallenge()]:
-        if c.is_locally_eligible():
-            out[c.get_name()] = c
-    return out
-
-
 @six.add_metaclass(abc.ABCMeta)
 class ReauthChallenge(object):
     """Base class for reauth challenges."""
 
+    @property
     @abc.abstractmethod
-    def get_name(self):
+    def name(self):
         """Returns the name of the challenge."""
         pass
 
+    @property
     @abc.abstractmethod
     def is_locally_eligible(self):
         """Returns true if a challenge is supported locally on this machine."""
         pass
 
     @abc.abstractmethod
-    def obtain_credentials(self, metadata):
+    def obtain_challenge_input(self, metadata):
         """Performs logic required to obtain credentials and returns it.
 
         Args:
@@ -72,13 +64,15 @@ class ReauthChallenge(object):
 class PasswordChallenge(ReauthChallenge):
     """Challenge that asks for user's password."""
 
-    def get_name(self):
+    @property
+    def name(self):
         return 'PASSWORD'
 
+    @property
     def is_locally_eligible(self):
         return True
 
-    def obtain_credentials(self, unused_metadata):
+    def obtain_challenge_input(self, unused_metadata):
         passwd = _helpers.get_user_password('Please enter your password:')
         if not passwd:
             passwd = ' '  # avoid the server crashing in case of no password :D
@@ -88,13 +82,15 @@ class PasswordChallenge(ReauthChallenge):
 class SecurityKeyChallenge(ReauthChallenge):
     """Challenge that asks for user's security key touch."""
 
-    def get_name(self):
+    @property
+    def name(self):
         return 'SECURITY_KEY'
 
+    @property
     def is_locally_eligible(self):
         return True
 
-    def obtain_credentials(self, metadata):
+    def obtain_challenge_input(self, metadata):
         sk = metadata['securityKey']
         challenges = sk['challenges']
         app_id = sk['applicationId']
@@ -125,3 +121,12 @@ class SecurityKeyChallenge(ReauthChallenge):
         except pyu2f.errors.NoDeviceFoundError:
             sys.stderr.write('No security key found.\n')
         return None
+
+
+AVAILABLE_CHALLENGES = {
+    challenge.name: challenge
+    for challenge in [
+        SecurityKeyChallenge(),
+        PasswordChallenge()
+    ]
+}
