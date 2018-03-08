@@ -47,7 +47,8 @@ class ChallangesTest(unittest.TestCase):
                 'applicationId': 'security_key_application_id',
                 'challenges': [{
                     'keyHandle': 'some_key',
-                    'challenge': base64.urlsafe_b64encode('some_challenge'),
+                    'challenge': base64.urlsafe_b64encode(
+                        'some_challenge'.encode('ascii')).decode('ascii'),
                 }]
             }}
 

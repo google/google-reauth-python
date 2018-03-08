@@ -123,7 +123,8 @@ class ReauthTest(unittest.TestCase):
                             'applicationId': 'security_key_application_id',
                             'challenges': [{
                                 'keyHandle': 'some_key',
-                                'challenge': base64.urlsafe_b64encode('some_challenge'),
+                                'challenge': base64.urlsafe_b64encode(
+                                    'some_challenge'.encode('ascii')).decode('ascii'),
                             }],
                         },
                     }],
@@ -165,7 +166,7 @@ class ReauthTest(unittest.TestCase):
             client_data = model.ClientData(
                 model.ClientData.TYP_AUTHENTICATION,
                 challenge,
-                'some_origin')
+                'some_origin'.encode('ascii'))
             return model.SignResponse('key_handle', 'resp', client_data)
 
     def _call_reauth(self, request_mock, scopes=None):

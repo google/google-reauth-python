@@ -121,7 +121,7 @@ def _obtain_rapt(http_request, access_token, requested_scopes, rounds_num=5):
         if not msg:
             msg = _reauth_client.get_challenges(
                 http_request,
-                challenges.AVAILABLE_CHALLENGES.keys(),
+                list(challenges.AVAILABLE_CHALLENGES.keys()),
                 access_token,
                 requested_scopes)
 
