@@ -22,7 +22,7 @@ import nox
 def tests(session, py):
     session.interpreter = 'python{}'.format(py)
     session.install('mock', 'pytest', 'pytest-cov')
-    session.install('-e', '.')
+    session.install('-e', '.[oauth2client]')
 
     session.run(
         'py.test',
