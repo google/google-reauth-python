@@ -34,7 +34,7 @@ class _U2FInterfaceMock(object):
 _u2f_interface_mock = _U2FInterfaceMock()
 
 
-class ChallangesTest(unittest.TestCase):
+class ChallengesTest(unittest.TestCase):
     """This class contains tests for reauth challanges. """
 
     @mock.patch('pyu2f.u2f.GetLocalU2FInterface', return_value = _u2f_interface_mock)
