@@ -163,12 +163,13 @@ def get_rapt_token(http_request, client_id, client_secret, refresh_token,
 
     # Get access token for reauth.
     response, content = _reauth_client.refresh_grant(
-        http_request,
-        client_id,
-        client_secret,
-        refresh_token,
-        token_uri,
-        _REAUTH_SCOPE)
+        http_request=http_request,
+        client_id=client_id,
+        client_secret=client_secret,
+        refresh_token=refresh_token,
+        token_uri=token_uri,
+        scopes=_REAUTH_SCOPE,
+        headers={'Content-Type': 'application/x-www-form-urlencoded'})
 
     try:
         content = json.loads(content)
@@ -259,14 +260,14 @@ def refresh_access_token(
     """
 
     response, content = _reauth_client.refresh_grant(
-        http_request,
-        client_id,
-        client_secret,
-        refresh_token,
-        token_uri,
-        scopes,
-        rapt,
-        headers)
+        http_request=http_request,
+        client_id=client_id,
+        client_secret=client_secret,
+        refresh_token=refresh_token,
+        token_uri=token_uri,
+        scopes=scopes,
+        rapt=rapt,
+        headers=headers)
 
     if response.status != http_client.OK:
         # Check if we need a rapt token or if the rapt token is invalid.
@@ -285,14 +286,14 @@ def refresh_access_token(
             )
             # retry with refreshed rapt
             response, content = _reauth_client.refresh_grant(
-                http_request,
-                client_id,
-                client_secret,
-                refresh_token,
-                token_uri,
-                scopes,
-                rapt,
-                headers)
+                http_request=http_request,
+                client_id=client_id,
+                client_secret=client_secret,
+                refresh_token=refresh_token,
+                token_uri=token_uri,
+                scopes=scopes,
+                rapt=rapt,
+                headers=headers)
 
     try:
         content = json.loads(content)

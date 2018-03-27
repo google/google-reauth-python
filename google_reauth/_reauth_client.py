@@ -134,9 +134,13 @@ def refresh_grant(
         'client_id': client_id,
         'client_secret': client_secret,
         'refresh_token': refresh_token,
-        'scope': scopes,
-        'rapt': rapt,
     }
+
+    if scopes:
+        parameters['scope'] = scopes
+
+    if rapt:
+        parameters['rapt'] = rapt
 
     body = urllib.parse.urlencode(parameters)
 
