@@ -265,7 +265,6 @@ def refresh_access_token(
         client_secret=client_secret,
         refresh_token=refresh_token,
         token_uri=token_uri,
-        scopes=scopes,
         rapt=rapt,
         headers=headers)
 
@@ -291,7 +290,6 @@ def refresh_access_token(
                 client_secret=client_secret,
                 refresh_token=refresh_token,
                 token_uri=token_uri,
-                scopes=scopes,
                 rapt=rapt,
                 headers=headers)
 
