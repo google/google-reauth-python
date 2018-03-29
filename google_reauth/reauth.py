@@ -251,9 +251,9 @@ def refresh_access_token(
         scopes: scopes required by the client application
 
     Returns:
-        Tuple[str, str, Optional[str], Optional[str], Optional[str]]: The
-            access token, new refresh token, expiration, token id and response
-            content returned by the token endpoint.
+        Tuple[str, str, str, Optional[str], Optional[str], Optional[str]]: The
+            rapt token, the access token, new refresh token, expiration,
+            token id and response content returned by the token endpoint.
     Raises:
         errors.ReauthError if reauth failed
         errors.HttpAccessTokenRefreshError it access token refresh failed
@@ -308,4 +308,4 @@ def refresh_access_token(
     refresh_token = content.get('refresh_token', None)
     expires_in = content.get('expires_in', None)
     id_token = content.get('id_token', None)
-    return content, access_token, refresh_token, expires_in, id_token
+    return rapt, content, access_token, refresh_token, expires_in, id_token

@@ -125,8 +125,10 @@ class Oauth2WithReauthCredentials(client.OAuth2Credentials):
         except errors.HttpAccessTokenRefreshError as e:
             raise client.HttpAccessTokenRefreshError(e, status=e.status)
 
-    def _update(self, content, access_token, refresh_token=None,
+    def _update(self, rapt, content, access_token, refresh_token=None,
                 expires_in=None, id_token=None):
+        if rapt:
+            self.rapt_token = rapt
         self.token_response = content
         self.access_token = access_token
         self.refresh_token = (
