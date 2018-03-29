@@ -108,10 +108,6 @@ class Oauth2WithReauthCredentials(client.OAuth2Credentials):
             content = _helpers._from_bytes(content)
             return response, content
 
-        self.invalid = True
-        if self.store:
-            self.store.locked_put(self)
-
         try:
             self._update(*reauth.refresh_access_token(
                     http_request,
@@ -122,7 +118,11 @@ class Oauth2WithReauthCredentials(client.OAuth2Credentials):
                     rapt=self.rapt_token,
                     scopes=list(self.scopes),
                     headers=headers))
-        except errors.HttpAccessTokenRefreshError as e:
+        except (errors.ReauthAccessTokenRefreshError,
+                errors.HttpAccessTokenRefreshError) as e:
+            self.invalid = True
+            if self.store:
+                self.store.locked_put(self)
             raise client.HttpAccessTokenRefreshError(e, status=e.status)
 
     def _update(self, rapt, content, access_token, refresh_token=None,
