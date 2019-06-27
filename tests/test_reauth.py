@@ -27,7 +27,7 @@ from google_reauth import reauth
 from google_reauth import reauth_creds
 from google_reauth.reauth_creds import Oauth2WithReauthCredentials
 import mock
-from oauth2client_4_0 import client
+from oauth2client import client
 from pyu2f import model
 from pyu2f import u2f
 from six.moves import http_client
