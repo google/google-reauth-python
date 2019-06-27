@@ -22,9 +22,9 @@ import logging
 
 from google_reauth import errors
 from google_reauth import reauth
-from oauth2client_4_0 import _helpers
-from oauth2client_4_0 import client
-from oauth2client_4_0 import transport
+from oauth2client import _helpers
+from oauth2client import client
+from oauth2client import transport
 
 
 _LOGGER = logging.getLogger(__name__)
