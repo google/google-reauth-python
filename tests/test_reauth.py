@@ -121,7 +121,7 @@ class ReauthTest(unittest.TestCase):
                     'challenges': [{
                         'keyHandle': 'some_key',
                         'challenge': base64.urlsafe_b64encode(
-                            u'some_challenge').decode(),
+                            'some_challenge'.encode()).decode(),
                     }],
                 },
             }],
