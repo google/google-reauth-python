@@ -95,7 +95,7 @@ class Oauth2WithReauthCredentials(client.OAuth2Credentials):
                             token.
 
         Raises:
-            oauth2client_4_0.client.HttpAccessTokenRefreshError: if the refresh
+            oauth2client.client.HttpAccessTokenRefreshError: if the refresh
                 fails.
         """
         headers = self._generate_refresh_request_headers()
