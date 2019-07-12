@@ -209,7 +209,22 @@ class ReauthCredsTest(unittest.TestCase):
             'old_refresh_token',
             datetime.datetime(2018, 3, 2, 21, 26, 13),
             True)
+    
+    def testRefreshWithStore(self):
+        def request_side_effect(self, *args, **kwargs):
+            return _token_response
 
+        creds = self._get_creds()
+        store = MockStore()
+        creds.set_store(store)
+        creds._do_refresh_request(self._http_mock(request_side_effect))
+        self._check_credentials(
+            creds, None,
+            'new_access_token',
+            'new_refresh_token',
+            datetime.datetime(2018, 3, 2, 22, 26, 13),
+            False)
+        
     def testRefreshNoStore(self):
         def request_side_effect(self, *args, **kwargs):
             return _token_response
