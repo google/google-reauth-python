@@ -167,7 +167,7 @@ class ReauthTest(unittest.TestCase):
                 model.ClientData.TYP_AUTHENTICATION,
                 challenge,
                 'some_origin'.encode('ascii'))
-            return model.SignResponse('key_handle', 'resp', client_data)
+            return model.SignResponse('key_handle'.encode(), 'resp'.encode(), client_data)
 
     def _call_reauth(self, request_mock, scopes=None):
         if os.environ.get('SK_SIGNING_PLUGIN') is not None:
