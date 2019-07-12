@@ -166,7 +166,7 @@ class ReauthTest(unittest.TestCase):
             client_data = model.ClientData(
                 model.ClientData.TYP_AUTHENTICATION,
                 challenge,
-                'some_origin'.encode('ascii'))
+                'some_origin')
             return model.SignResponse('key_handle'.encode(), 'resp'.encode(), client_data)
 
     def _call_reauth(self, request_mock, scopes=None):
