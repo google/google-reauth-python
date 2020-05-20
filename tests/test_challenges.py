@@ -78,3 +78,13 @@ class ChallengesTest(unittest.TestCase):
     def testNoPassword(self, getpass_mock):
         self.assertEqual(challenges.PasswordChallenge().obtain_challenge_input({}),
             {'credential': ' '})
+
+    def testSaml(self):
+        metadata = {
+            'status': 'READY',
+            'challengeId': 1,
+            'challengeType': 'SAML',
+            'securityKey': {}
+            }
+        challenge = challenges.SamlChallenge()
+        self.assertEqual(None, challenge.obtain_challenge_input(metadata))
