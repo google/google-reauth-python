@@ -21,7 +21,7 @@ import unittest
 
 import mock
 
-from google_reauth import challenges
+from google_reauth import challenges, errors
 
 import pyu2f
 
@@ -87,4 +87,6 @@ class ChallengesTest(unittest.TestCase):
             'securityKey': {}
             }
         challenge = challenges.SamlChallenge()
-        self.assertEqual(None, challenge.obtain_challenge_input(metadata))
+        self.assertEqual(True, challenge.is_locally_eligible)
+        with self.assertRaises(errors.ReauthSamlLoginRequiredError):
+            challenge.obtain_challenge_input(metadata)
