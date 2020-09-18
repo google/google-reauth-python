@@ -123,10 +123,31 @@ class SecurityKeyChallenge(ReauthChallenge):
         return None
 
 
+class SamlChallenge(ReauthChallenge):
+    """Challenge that asks SAML users to complete SAML login."""
+
+    @property
+    def name(self):
+        return 'SAML'
+
+    @property
+    def is_locally_eligible(self):
+        return True
+
+    def obtain_challenge_input(self, metadata):
+        # Magic Arch has not fully supported returning a proper dedirect URL
+        # for programmatic SAML users today. So we error our here and request
+        # users to complete a web login.
+        sys.stderr.write('SAML login is required for the current account to '
+                         'complete reauthentication.')
+        return None
+
+
 AVAILABLE_CHALLENGES = {
     challenge.name: challenge
     for challenge in [
         SecurityKeyChallenge(),
-        PasswordChallenge()
+        PasswordChallenge(),
+        SamlChallenge()
     ]
 }
