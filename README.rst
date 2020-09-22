@@ -1,7 +1,7 @@
 Google Reauth Python Library
 ============================
 
-|build| |docs| |pypi|
+|build| |pypi|
 
 This library provides Reauth support to Google's authentication libraries for
 Python. Reauth allows using two-factor authentication for end-user credentials.
