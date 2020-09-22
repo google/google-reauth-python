@@ -6,6 +6,9 @@ Google Reauth Python Library
 This library provides Reauth support to Google's authentication libraries for
 Python. Reauth allows using two-factor authentication for end-user credentials.
 
+Other than for reference purposes, this library is of little use to non-Google
+developers.
+
 .. |build| image:: https://travis-ci.org/Google/google-reauth-python.svg?branch=master
    :target: https://travis-ci.org/Google/google-reauth-python
 .. |pypi| image:: https://img.shields.io/pypi/v/google-reauth.svg
@@ -27,7 +30,9 @@ For more information on setting up your Python development environment, please r
 Contributing
 ------------
 
-See `CONTRIBUTING.rst`_ for more information on how to get started.
+As mentioned in the beginning, this library is not generally consumable in
+non-Google applications. However, if you are still inteested in contributing to
+it, please see `CONTRIBUTING.rst`_ for more information on how to get started.
 
 .. _CONTRIBUTING.rst: https://github.com/GoogleCloudPlatform/google-auth-library-python/blob/master/CONTRIBUTING.rst
 
