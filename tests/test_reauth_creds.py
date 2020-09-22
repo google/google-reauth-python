@@ -185,7 +185,7 @@ class ReauthCredsTest(unittest.TestCase):
             datetime.datetime(2018, 3, 2, 22, 26, 13),
             False)
 
-    def testInvalidRapt(self):
+    def testInvalidRaptWithStore(self):
         responses = [
             (_error_response, json.dumps({
                 'error': 'invalid_grant',
@@ -205,6 +205,29 @@ class ReauthCredsTest(unittest.TestCase):
 
         self._check_credentials(
             creds, store,
+            'old_token',
+            'old_refresh_token',
+            datetime.datetime(2018, 3, 2, 21, 26, 13),
+            True)
+
+    def testInvalidRaptNoStore(self):
+        responses = [
+            (_error_response, json.dumps({
+                'error': 'invalid_grant',
+                'error_subtype': 'rapt_required'})),
+            (_error_response, json.dumps({
+                'error': 'invalid_grant',
+                'error_subtype': 'rapt_required'}))]
+        def request_side_effect(self, *args, **kwargs):
+            return responses.pop()
+
+        creds = self._get_creds()
+
+        with self.assertRaises(client.HttpAccessTokenRefreshError):
+            creds._do_refresh_request(self._http_mock(request_side_effect))
+
+        self._check_credentials(
+            creds, None,
             'old_token',
             'old_refresh_token',
             datetime.datetime(2018, 3, 2, 21, 26, 13),
