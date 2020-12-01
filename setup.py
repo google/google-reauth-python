@@ -33,7 +33,7 @@ with io.open('README.rst', 'r') as fh:
 
 setuptools.setup(
     name='google-reauth',
-    version='0.1.0',
+    version='0.1.1',
     author='Google',
     author_email='googleapis-publisher@google.com',
     description='Google Reauth Library',
